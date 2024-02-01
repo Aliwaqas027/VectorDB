@@ -3,7 +3,7 @@ import mimetypes
 import openai
 from openai import OpenAI
 import uuid
-import pinecone
+from pinecone import Pinecone, ServerlessSpec
 from app import app
 import spacy
 from dotenv import load_dotenv
@@ -16,7 +16,18 @@ from langchain_community.document_loaders import PyPDFDirectoryLoader
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
-pinecone.init(api_key=os.getenv("PINECONE_API_KEY"), environment=os.getenv("PINECONE_ENVIRONMENT"))
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+if os.getenv("PINECONE_INDEX") not in pc.list_indexes().names():
+    pc.create_index(
+        name=os.getenv("PINECONE_INDEX"),
+        dimension=1536,
+        metric='euclidean',
+        spec=ServerlessSpec(
+            cloud='aws',
+            region='us-west-2'
+        )
+    )
+
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
@@ -36,7 +47,7 @@ def get_answer(question, context):
 
 def upload_chunks_db(chunks):
     # Initialize Pinecone Index and Embedding Model
-    index = pinecone.Index(os.getenv("PINECONE_INDEX"))
+    index = pc.Index(os.getenv("PINECONE_INDEX"))
     embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
 
     # Get embeddings for each chunk of text
@@ -68,7 +79,7 @@ def upload_chunks_db(chunks):
 
 
 def upload_documents(docs):
-    index = pinecone.Index(os.getenv("PINECONE_INDEX"))
+    index = pc.Index(os.getenv("PINECONE_INDEX"))
     for doc in docs:
         filename_with_extension = os.path.basename(doc.metadata["source"])
         docName, _ = os.path.splitext(filename_with_extension)
@@ -147,7 +158,7 @@ def get_top_matches(text):
 
 
 def get_pinecone_similarities(text):
-    index = pinecone.Index(os.getenv("PINECONE_INDEX"))
+    index = pc.Index(os.getenv("PINECONE_INDEX"))
     embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
     embedded_query = embeddings_model.embed_query(text)
 
