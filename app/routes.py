@@ -1,10 +1,12 @@
+import json
 import os
 from app import app
 from flask import jsonify, request
-from app.services.helper import (get_pinecone_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
-                                 upload_doc, upload_csv, process_file_based_on_mime)
+from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
+                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone, process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
+
 # Create a directory for storing uploaded files within the app context
 UPLOAD_CSV_FOLDER = os.path.join(app.root_path, 'csv')
 os.makedirs(UPLOAD_CSV_FOLDER, exist_ok=True)
@@ -34,6 +36,22 @@ def merge_text():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/query_filter', methods=['POST'])
+def filter_text():
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        filter_data = data.get('filter')
+
+        if not text or not isinstance(text, str):
+            return jsonify({'error': str('text is required and must be a non-empty string')}), 400
+        else:
+            response = query_filter_pinecone(text, filter_data)
+            return jsonify({'answer': response}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # Define a route for the "tok_k similarities from DB" endpoint
 @app.route('/api/get_similarities', methods=['POST'])
 def query():
@@ -44,7 +62,33 @@ def query():
         if not text or not isinstance(text, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
         else:
-            similarities = get_pinecone_similarities(text)
+            similarities = get_top8_similarities(text)
+            if similarities is None:
+                # Handle the case where no similarities were found or an error occurred
+                return jsonify({'error': 'Failed to retrieve similarities'}), 500
+
+            response = {
+                'similarities': similarities
+            }
+
+            return jsonify(response), 200
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/get_filter_similarities', methods=['POST'])
+def query_filter():
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        filter_data = data.get('filter')
+
+        if not text or not isinstance(text, str):
+            return jsonify({'error': str('text is required and must be a non-empty string')}), 400
+        else:
+            similarities = get_top8_filter_similarities(text, filter_data)
             if similarities is None:
                 # Handle the case where no similarities were found or an error occurred
                 return jsonify({'error': 'Failed to retrieve similarities'}), 500
@@ -84,6 +128,8 @@ def upload_file():
         return jsonify(error='Method not allowed'), 405
 
     uploaded_files = request.files.getlist('files')
+    metadata = request.form.get('type')
+    # Assuming metadata is sent as JSON, parse it
     if not uploaded_files:
         # No files part
         return jsonify(error='No files part in the request'), 400
@@ -98,24 +144,24 @@ def upload_file():
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
             # Save the file
             f.save(upload_path)
-            files_path.append(upload_path)
+            files_path.append({"path": upload_path, "name": f.filename})
             # Here you might want to call your processing functions e.g., process_file(upload_path)
 
         # Process each file according to its MIME type
-        for file_path in files_path:
-            process_file_based_on_mime(file_path)
+        for file in files_path:
+            process_file_based_on_mime(file["path"], metadata, file["name"])
 
         # Remove files after processing
-        for file_path in files_path:
-            os.remove(file_path)
+        for file in files_path:
+            os.remove(file["path"])
 
         return jsonify(message='Files uploaded and processed successfully.')
 
     except Exception as e:
         # Clean up any files that were saved before the error occurred
-        for file_path in files_path:
-            if os.path.exists(file_path):
-                os.remove(file_path)
+        for file in files_path:
+            if os.path.exists(file["path"]):
+                os.remove(file["path"])
         return jsonify(error=str(e)), 500
 
 
@@ -126,7 +172,7 @@ def chat_csv():
         return jsonify({"error": "OPENAI_API_KEY is not set"}), 500
     query = request.form.get('query')
     csv_file = request.files.get('csv_file')
-    print("csv_file",csv_file)
+    print("csv_file", csv_file)
     if csv_file is None:
         return jsonify({"error": "No CSV file provided"}), 400
 
