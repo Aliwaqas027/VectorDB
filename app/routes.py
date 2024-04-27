@@ -1,7 +1,8 @@
+import json
 import os
 from app import app
 from flask import jsonify, request
-from app.services.helper import (get_pinecone_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
+from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
                                  upload_doc, upload_csv, process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
@@ -44,7 +45,7 @@ def query():
         if not text or not isinstance(text, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
         else:
-            similarities = get_pinecone_similarities(text)
+            similarities = get_top8_similarities(text)
             if similarities is None:
                 # Handle the case where no similarities were found or an error occurred
                 return jsonify({'error': 'Failed to retrieve similarities'}), 500
@@ -84,6 +85,10 @@ def upload_file():
         return jsonify(error='Method not allowed'), 405
 
     uploaded_files = request.files.getlist('files')
+    metadata = request.form.get('metadata')
+    # Assuming metadata is sent as JSON, parse it
+    metadata_dict = json.loads(metadata)
+    print(metadata_dict)
     if not uploaded_files:
         # No files part
         return jsonify(error='No files part in the request'), 400
@@ -103,7 +108,7 @@ def upload_file():
 
         # Process each file according to its MIME type
         for file_path in files_path:
-            process_file_based_on_mime(file_path)
+            process_file_based_on_mime(file_path, metadata_dict)
 
         # Remove files after processing
         for file_path in files_path:
