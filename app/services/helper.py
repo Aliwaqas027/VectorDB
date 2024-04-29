@@ -13,6 +13,7 @@ from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_community.document_loaders import PyPDFDirectoryLoader
+import boto3
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -30,6 +31,24 @@ if os.getenv("PINECONE_INDEX") not in pc.list_indexes().names():
     )
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+
+def upload_s3(file, file_name):
+    bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+    region = os.environ.get("AWS_REGION")
+    access_key = os.environ.get("AWS_ACCESS_KEY")
+    secret_key = os.environ.get("AWS_SECRET_KEY")
+
+    s3_client = boto3.client(
+        service_name='s3',
+        region_name=region,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key
+    )
+
+    response = s3_client.upload_file(file, bucket_name, file_name)
+
+    print(f'upload_log_to_aws response: {response}')
 
 
 def extract_metadata(metadata_text, text):
@@ -89,9 +108,12 @@ def upload_chunks_db(chunks):
             batch = []
 
 
-def upload_documents(docs, meta_data, doc_name):
+def upload_documents(docs, meta_data, doc_name, is_rfi):
     try:
-        index = pc.Index(os.getenv("PINECONE_INDEX"))
+        if is_rfi == "true":
+            index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+        else:
+            index = pc.Index(os.getenv("PINECONE_INDEX"))
         for doc in docs:
             filename_with_extension = os.path.basename(doc.metadata["source"])
             docName, _ = os.path.splitext(filename_with_extension)
@@ -163,7 +185,7 @@ def upload_csv(meta_data, doc_name):
 
 def upload_pptx(meta_data, doc_name):
     # use the uploads_dir in your DirectoryLoader
-    loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.csv")
+    loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.pptx")
     docs = loader.load()
     upload_documents(docs, meta_data, doc_name)
 
@@ -193,8 +215,11 @@ def get_pinecone_similarities(text):
     return processed_matches[0]["text"]
 
 
-def get_filter_pinecone_similarities(text, filter_data):
-    index = pc.Index(os.getenv("PINECONE_INDEX"))
+def get_filter_pinecone_similarities(text, filter_data, index):
+    if index == "rfi":
+        index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+    else:
+        index = pc.Index(os.getenv("PINECONE_INDEX"))
     embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
     embedded_query = embeddings_model.embed_query(text)
 
@@ -266,8 +291,8 @@ def query_pinecone(text):
     return response
 
 
-def query_filter_pinecone(text, filter_data):
-    context_response = get_filter_pinecone_similarities(text, filter_data)
+def query_filter_pinecone(text, filter_data, index):
+    context_response = get_filter_pinecone_similarities(text, filter_data, index)
     response = get_answer(question=text, context=context_response)
     return response
 

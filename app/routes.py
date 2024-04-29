@@ -2,7 +2,7 @@ import json
 import os
 from app import app
 from flask import jsonify, request
-from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
+from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf, upload_s3,
                                  upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone, process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
@@ -42,11 +42,12 @@ def filter_text():
         data = request.get_json()
         text = data.get('text')
         filter_data = data.get('filter')
+        index = data.get('index')
 
         if not text or not isinstance(text, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
         else:
-            response = query_filter_pinecone(text, filter_data)
+            response = query_filter_pinecone(text, filter_data, index)
             return jsonify({'answer': response}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -129,6 +130,12 @@ def upload_file():
 
     uploaded_files = request.files.getlist('files')
     metadata = request.form.get('type')
+    rfi = request.form.get('rfi')
+    print(rfi)
+    # Assuming metadata is sent as JSON, parse it
+    if not metadata:
+        # No files part
+        return jsonify(error='Type required!'), 400
     # Assuming metadata is sent as JSON, parse it
     if not uploaded_files:
         # No files part
@@ -142,6 +149,8 @@ def upload_file():
         for f in uploaded_files:
             # Define the path for each file
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
+            # upload file to s3
+            # upload_s3(f, f.filename)
             # Save the file
             f.save(upload_path)
             files_path.append({"path": upload_path, "name": f.filename})
