@@ -33,7 +33,7 @@ if os.getenv("PINECONE_INDEX") not in pc.list_indexes().names():
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 
-def upload_s3(file, file_name):
+def upload_s3(f):
     bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
     region = os.environ.get("AWS_REGION")
     access_key = os.environ.get("AWS_ACCESS_KEY")
@@ -46,9 +46,15 @@ def upload_s3(file, file_name):
         aws_secret_access_key=secret_key
     )
 
-    response = s3_client.upload_file(file, bucket_name, file_name)
-
-    print(f'upload_log_to_aws response: {response}')
+    try:
+        # Upload the file
+        response = s3_client.upload_fileobj(f, bucket_name, f.filename)
+        print(f'File upload response{response}')
+        print(f'File uploaded successfully to s3://{bucket_name}/{f.filename}')
+        return f'https://nudge-knowledgebase-docs.s3.amazonaws.com/{f.filename}'
+    except Exception as e:
+        print(f'Error uploading file to S3: {e}')
+        return None
 
 
 def extract_metadata(metadata_text, text):
@@ -155,39 +161,39 @@ def upload_documents(docs, meta_data, doc_name, is_rfi):
         print(f"An error occurred while processing documents: {e}")
 
 
-def upload_txt(meta_data, doc_name):
+def upload_txt(meta_data, doc_name, rfi):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.txt")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_pdf(meta_data, doc_name):
+def upload_pdf(meta_data, doc_name, rfi):
     # use the uploads_dir in your DirectoryLoader
     loader = PyPDFDirectoryLoader(app.config['UPLOAD_FOLDER'])
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_doc(meta_data, doc_name):
+def upload_doc(meta_data, doc_name, rfi):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.doc")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_csv(meta_data, doc_name):
+def upload_csv(meta_data, doc_name, rfi):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.csv")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_pptx(meta_data, doc_name):
+def upload_pptx(meta_data, doc_name, rfi):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.pptx")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
 def get_top_matches(text):
@@ -297,20 +303,20 @@ def query_filter_pinecone(text, filter_data, index):
     return response
 
 
-def process_file_based_on_mime(file_path, meta_data, doc_name):
+def process_file_based_on_mime(file_path, meta_data, doc_name, rfi):
     """Process files based on the file's MIME type."""
     mime_type = mimetypes.guess_type(file_path)[0]
 
     if mime_type == 'text/plain':
-        upload_txt(meta_data, doc_name)
+        upload_txt(meta_data, doc_name, rfi)
     elif mime_type == 'application/msword':
-        upload_doc(meta_data, doc_name)
+        upload_doc(meta_data, doc_name, rfi)
     elif mime_type == 'application/pdf':
-        upload_pdf(meta_data, doc_name)
+        upload_pdf(meta_data, doc_name, rfi)
     elif mime_type == 'text/csv':
-        upload_csv(meta_data, doc_name)
+        upload_csv(meta_data, doc_name, rfi)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        upload_pptx(meta_data, doc_name)
+        upload_pptx(meta_data, doc_name, rfi)
     # Add more MIME type handling as needed
     else:
         # Log unsupported file type and remove it

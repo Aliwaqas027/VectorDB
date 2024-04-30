@@ -2,8 +2,10 @@ import json
 import os
 from app import app
 from flask import jsonify, request
-from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf, upload_s3,
-                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone, process_file_based_on_mime)
+from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
+                                 upload_s3,
+                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone,
+                                 process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
 
@@ -150,15 +152,15 @@ def upload_file():
             # Define the path for each file
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
             # upload file to s3
-            # upload_s3(f, f.filename)
+            s3_path = upload_s3(f)
             # Save the file
             f.save(upload_path)
-            files_path.append({"path": upload_path, "name": f.filename})
+            files_path.append({"path": upload_path, "name": s3_path})
             # Here you might want to call your processing functions e.g., process_file(upload_path)
 
         # Process each file according to its MIME type
         for file in files_path:
-            process_file_based_on_mime(file["path"], metadata, file["name"])
+            process_file_based_on_mime(file["path"], metadata, file["name"], rfi)
 
         # Remove files after processing
         for file in files_path:
