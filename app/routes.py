@@ -1,4 +1,5 @@
 import json
+import io
 import os
 from app import app
 from flask import jsonify, request
@@ -133,7 +134,6 @@ def upload_file():
     uploaded_files = request.files.getlist('files')
     metadata = request.form.get('type')
     rfi = request.form.get('rfi')
-    print(rfi)
     # Assuming metadata is sent as JSON, parse it
     if not metadata:
         # No files part
@@ -149,22 +149,18 @@ def upload_file():
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
         for f in uploaded_files:
+
             # Define the path for each file
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-            # upload file to s3
-            s3_path = upload_s3(f)
-            # Save the file
+            # # Save the file
             f.save(upload_path)
+            # # upload file to s3
+            s3_path = upload_s3(upload_path, f.filename)
+            print("s3_path", s3_path)
+
             files_path.append({"path": upload_path, "name": s3_path})
-            # Here you might want to call your processing functions e.g., process_file(upload_path)
-
-        # Process each file according to its MIME type
-        for file in files_path:
-            process_file_based_on_mime(file["path"], metadata, file["name"], rfi)
-
-        # Remove files after processing
-        for file in files_path:
-            os.remove(file["path"])
+            process_file_based_on_mime(upload_path, metadata, s3_path, rfi)
+            os.remove(upload_path)
 
         return jsonify(message='Files uploaded and processed successfully.')
 
