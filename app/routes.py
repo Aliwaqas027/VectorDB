@@ -1,5 +1,6 @@
 import json
 import io
+import requests
 import os
 from app import app
 from flask import jsonify, request
@@ -169,6 +170,48 @@ def upload_file():
         for file in files_path:
             if os.path.exists(file["path"]):
                 os.remove(file["path"])
+        return jsonify(error=str(e)), 500
+
+
+@app.route('/api/upload_link', methods=['POST'])
+def upload_link():
+    if request.method != 'POST':
+        # Method Not Allowed
+        return jsonify(error='Method not allowed'), 405
+    data = request.get_json()
+    url = data.get('url')
+    metadata = data.get('type')
+    rfi = data.get('rfi')
+    # Assuming metadata is sent as JSON, parse it
+    if not metadata:
+        # No files part
+        return jsonify(error='Type required!'), 400
+    # Assuming metadata is sent as JSON, parse it
+    if not url:
+        # No files part
+        return jsonify(error='No url part in the request'), 400
+
+    try:
+        # Ensure the upload directory exists
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        response = requests.get(url)
+        response.raise_for_status()
+
+        filename = os.path.basename(url)
+
+        destination_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # Write the file to the destination folder
+        with open(destination_path, 'wb') as f:
+            f.write(response.content)
+
+        process_file_based_on_mime(destination_path, metadata, url, rfi)
+        os.remove(destination_path)
+
+        return jsonify(message='Files uploaded and processed successfully.')
+
+    except Exception as e:
+        # Clean up any files that were saved before the error occurred
         return jsonify(error=str(e)), 500
 
 
