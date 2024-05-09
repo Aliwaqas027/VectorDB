@@ -1,9 +1,13 @@
 import json
+import io
+import requests
 import os
 from app import app
 from flask import jsonify, request
 from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
-                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone, process_file_based_on_mime)
+                                 upload_s3,
+                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone,
+                                 process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
 
@@ -42,11 +46,12 @@ def filter_text():
         data = request.get_json()
         text = data.get('text')
         filter_data = data.get('filter')
+        index = data.get('index')
 
         if not text or not isinstance(text, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
         else:
-            response = query_filter_pinecone(text, filter_data)
+            response = query_filter_pinecone(text, filter_data, index)
             return jsonify({'answer': response}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -129,6 +134,11 @@ def upload_file():
 
     uploaded_files = request.files.getlist('files')
     metadata = request.form.get('type')
+    rfi = request.form.get('rfi')
+    # Assuming metadata is sent as JSON, parse it
+    if not metadata:
+        # No files part
+        return jsonify(error='Type required!'), 400
     # Assuming metadata is sent as JSON, parse it
     if not uploaded_files:
         # No files part
@@ -140,20 +150,18 @@ def upload_file():
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
         for f in uploaded_files:
+
             # Define the path for each file
             upload_path = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-            # Save the file
+            # # Save the file
             f.save(upload_path)
-            files_path.append({"path": upload_path, "name": f.filename})
-            # Here you might want to call your processing functions e.g., process_file(upload_path)
+            # # upload file to s3
+            s3_path = upload_s3(upload_path, f.filename)
+            print("s3_path", s3_path)
 
-        # Process each file according to its MIME type
-        for file in files_path:
-            process_file_based_on_mime(file["path"], metadata, file["name"])
-
-        # Remove files after processing
-        for file in files_path:
-            os.remove(file["path"])
+            files_path.append({"path": upload_path, "name": s3_path})
+            process_file_based_on_mime(upload_path, metadata, s3_path, rfi)
+            os.remove(upload_path)
 
         return jsonify(message='Files uploaded and processed successfully.')
 
@@ -162,6 +170,48 @@ def upload_file():
         for file in files_path:
             if os.path.exists(file["path"]):
                 os.remove(file["path"])
+        return jsonify(error=str(e)), 500
+
+
+@app.route('/api/upload_link', methods=['POST'])
+def upload_link():
+    if request.method != 'POST':
+        # Method Not Allowed
+        return jsonify(error='Method not allowed'), 405
+    data = request.get_json()
+    url = data.get('url')
+    metadata = data.get('type')
+    rfi = data.get('rfi')
+    # Assuming metadata is sent as JSON, parse it
+    if not metadata:
+        # No files part
+        return jsonify(error='Type required!'), 400
+    # Assuming metadata is sent as JSON, parse it
+    if not url:
+        # No files part
+        return jsonify(error='No url part in the request'), 400
+
+    try:
+        # Ensure the upload directory exists
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        response = requests.get(url)
+        response.raise_for_status()
+
+        filename = os.path.basename(url)
+
+        destination_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        # Write the file to the destination folder
+        with open(destination_path, 'wb') as f:
+            f.write(response.content)
+
+        process_file_based_on_mime(destination_path, metadata, url, rfi)
+        os.remove(destination_path)
+
+        return jsonify(message='Files uploaded and processed successfully.')
+
+    except Exception as e:
+        # Clean up any files that were saved before the error occurred
         return jsonify(error=str(e)), 500
 
 

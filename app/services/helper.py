@@ -13,6 +13,7 @@ from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader
 from langchain_community.document_loaders import PyPDFDirectoryLoader
+import boto3
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -30,6 +31,28 @@ if os.getenv("PINECONE_INDEX") not in pc.list_indexes().names():
     )
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+
+def upload_s3(f, name):
+    bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+    region = os.environ.get("AWS_REGION")
+    access_key = os.environ.get("AWS_ACCESS_KEY")
+    secret_key = os.environ.get("AWS_SECRET_KEY")
+
+    s3_client = boto3.client(
+        service_name='s3',
+        region_name=region,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key
+    )
+
+    try:
+        # Upload the file
+        s3_client.upload_file(f, bucket_name, name)
+        return f'https://nudge-knowledgebase-docs.s3.amazonaws.com/{name}'
+    except Exception as e:
+        print(f'Error uploading file to S3: {e}')
+        return None
 
 
 def extract_metadata(metadata_text, text):
@@ -89,9 +112,12 @@ def upload_chunks_db(chunks):
             batch = []
 
 
-def upload_documents(docs, meta_data, doc_name):
+def upload_documents(docs, meta_data, doc_name, is_rfi):
     try:
-        index = pc.Index(os.getenv("PINECONE_INDEX"))
+        if is_rfi == "true":
+            index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+        else:
+            index = pc.Index(os.getenv("PINECONE_INDEX"))
         for doc in docs:
             filename_with_extension = os.path.basename(doc.metadata["source"])
             docName, _ = os.path.splitext(filename_with_extension)
@@ -114,7 +140,7 @@ def upload_documents(docs, meta_data, doc_name):
                 metadata = {
                     "text": chunk.page_content,
                     "type": meta_data.strip('\"'),
-                    "doc_name": doc_name
+                    "doc_link": str(doc_name)
                 }
                 vector = {
                     "id": str(uuid.uuid4()),
@@ -133,39 +159,39 @@ def upload_documents(docs, meta_data, doc_name):
         print(f"An error occurred while processing documents: {e}")
 
 
-def upload_txt(meta_data, doc_name):
+def upload_txt(meta_data, doc_name, rfi, file_path):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.txt")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_pdf(meta_data, doc_name):
+def upload_pdf(meta_data, doc_name, rfi, file_path):
     # use the uploads_dir in your DirectoryLoader
-    loader = PyPDFDirectoryLoader(app.config['UPLOAD_FOLDER'])
+    loader = PyPDFDirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.pdf")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_doc(meta_data, doc_name):
+def upload_doc(meta_data, doc_name, rfi, file_path):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.doc")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_csv(meta_data, doc_name):
+def upload_csv(meta_data, doc_name, rfi, file_path):
     # use the uploads_dir in your DirectoryLoader
     loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.csv")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
-def upload_pptx(meta_data, doc_name):
+def upload_pptx(meta_data, doc_name, rfi, file_path):
     # use the uploads_dir in your DirectoryLoader
-    loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.csv")
+    loader = DirectoryLoader(app.config['UPLOAD_FOLDER'], glob="*.pptx")
     docs = loader.load()
-    upload_documents(docs, meta_data, doc_name)
+    upload_documents(docs, meta_data, doc_name, rfi)
 
 
 def get_top_matches(text):
@@ -193,8 +219,11 @@ def get_pinecone_similarities(text):
     return processed_matches[0]["text"]
 
 
-def get_filter_pinecone_similarities(text, filter_data):
-    index = pc.Index(os.getenv("PINECONE_INDEX"))
+def get_filter_pinecone_similarities(text, filter_data, index):
+    if index == "rfi":
+        index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+    else:
+        index = pc.Index(os.getenv("PINECONE_INDEX"))
     embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))
     embedded_query = embeddings_model.embed_query(text)
 
@@ -253,7 +282,7 @@ def get_top8_filter_similarities(text, filter_data):
     processed_matches = [
         {
             'text': match['metadata']['text'].replace('\n', ' '),
-            'docs': match['metadata']['doc_name']
+            'docs': match['metadata']['doc_link']
         }
         for match in response['matches']
     ]
@@ -266,26 +295,26 @@ def query_pinecone(text):
     return response
 
 
-def query_filter_pinecone(text, filter_data):
-    context_response = get_filter_pinecone_similarities(text, filter_data)
+def query_filter_pinecone(text, filter_data, index):
+    context_response = get_filter_pinecone_similarities(text, filter_data, index)
     response = get_answer(question=text, context=context_response)
     return response
 
 
-def process_file_based_on_mime(file_path, meta_data, doc_name):
+def process_file_based_on_mime(file_path, meta_data, doc_name, rfi):
     """Process files based on the file's MIME type."""
-    mime_type = mimetypes.guess_type(file_path)[0]
-
+    mime_type, _ = mimetypes.guess_type(file_path)
+    print(mime_type)
     if mime_type == 'text/plain':
-        upload_txt(meta_data, doc_name)
+        upload_txt(meta_data, doc_name, rfi, file_path)
     elif mime_type == 'application/msword':
-        upload_doc(meta_data, doc_name)
+        upload_doc(meta_data, doc_name, rfi, file_path)
     elif mime_type == 'application/pdf':
-        upload_pdf(meta_data, doc_name)
+        upload_pdf(meta_data, doc_name, rfi, file_path)
     elif mime_type == 'text/csv':
-        upload_csv(meta_data, doc_name)
+        upload_csv(meta_data, doc_name, rfi, file_path)
     elif mime_type == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        upload_pptx(meta_data, doc_name)
+        upload_pptx(meta_data, doc_name, rfi, file_path)
     # Add more MIME type handling as needed
     else:
         # Log unsupported file type and remove it
