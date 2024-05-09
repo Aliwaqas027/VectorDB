@@ -8,6 +8,8 @@ from pinecone import Pinecone, ServerlessSpec
 from app import app
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings
+ 
 from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -18,6 +20,7 @@ import boto3
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+rfi = Pinecone(api_key=os.getenv("PINECONE_INDEX_RFI"))
 
 if os.getenv("PINECONE_INDEX") not in pc.list_indexes().names():
     pc.create_index(
@@ -115,7 +118,7 @@ def upload_chunks_db(chunks):
 def upload_documents(docs, meta_data, doc_name, is_rfi):
     try:
         if is_rfi == "true":
-            index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+            index = rfi.Index(os.getenv("PINECONE_INDEX_RFI"))
         else:
             index = pc.Index(os.getenv("PINECONE_INDEX"))
         for doc in docs:
@@ -221,7 +224,7 @@ def get_pinecone_similarities(text):
 
 def get_filter_pinecone_similarities(text, filter_data, index):
     if index == "rfi":
-        index = pc.Index(os.getenv("PINECONE_INDEX_RFI"))
+        index = rfi.Index(os.getenv("PINECONE_INDEX_RFI"))
     else:
         index = pc.Index(os.getenv("PINECONE_INDEX"))
     embeddings_model = OpenAIEmbeddings(openai_api_key=os.getenv("OPENAI_API_KEY"))

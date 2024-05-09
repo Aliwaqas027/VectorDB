@@ -222,6 +222,7 @@ def chat_csv():
         return jsonify({"error": "OPENAI_API_KEY is not set"}), 500
     query = request.form.get('query')
     csv_file = request.files.get('csv_file')
+
     print("csv_file", csv_file)
     if csv_file is None:
         return jsonify({"error": "No CSV file provided"}), 400
