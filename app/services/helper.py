@@ -320,3 +320,52 @@ def process_file_based_on_mime(file_path, meta_data, doc_name, rfi):
         # Log unsupported file type and remove it
         print(f"Unsupported file type: {mime_type}")
         os.remove(file_path)
+
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "function_name",
+            "description": "description of function",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "param": {
+                        "type": "string",
+                        "description": "query description here"
+                    }
+                },
+                "required": ["param"]
+            }
+        }
+    }
+]
+
+
+def create_assistant():
+    assistant = client.beta.assistants.create(
+        name="Layer Assistant",
+        instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle '
+                     'it, and if there\'s no match, you use the default assistant.',
+        model="gpt-3.5-turbo",
+        tools=tools)
+
+    return assistant
+
+
+# a thread that runs message and openAI query
+def create_message_and_run(assistant, query, thread=None):
+    if not thread:
+        thread = client.beta.threads.create()
+
+    message = client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=query
+    )
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant.id
+    )
+    return run, thread

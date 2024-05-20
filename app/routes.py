@@ -249,3 +249,22 @@ def chat_csv():
     response_json = {"answer": response}
 
     return jsonify(response_json), 200
+
+
+@app.route('/api/ai_assistant', methods=['POST'])
+def ai_assistant():
+    try:
+        data = request.get_json()
+        query = data.get('text')
+        if not query or not isinstance(query, str):
+            return jsonify({'error': str('text is required and must be a non-empty string')}), 400
+        else:
+            response = {
+                'similarities': ""
+            }
+
+            return jsonify(response), 200
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
