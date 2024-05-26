@@ -6,7 +6,7 @@ from app import app
 from flask import jsonify, request
 from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
                                  upload_s3,
-                                 upload_doc, upload_csv, get_top8_filter_similarities, query_filter_pinecone,
+                                 send_message_and_retrieve_response, upload_csv, get_top8_filter_similarities, query_filter_pinecone,
                                  process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
 from langchain_openai import OpenAI
@@ -259,10 +259,10 @@ def ai_assistant():
         if not query or not isinstance(query, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
         else:
+            message= send_message_and_retrieve_response(query)
             response = {
-                'similarities': ""
+                'message': message
             }
-
             return jsonify(response), 200
 
     except Exception as e:

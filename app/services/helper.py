@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import mimetypes
 import openai
 from openai import OpenAI
@@ -322,33 +323,81 @@ def process_file_based_on_mime(file_path, meta_data, doc_name, rfi):
         os.remove(file_path)
 
 
+def data_genie(query):
+    print("Data Query ==> ", query)
+    return str("data genie")
+
+
+def insights_genie(query):
+    print("insight Query ==> ", query)
+    return str("insight genie0")
+
+
+def campaign_genie(query):
+    print("campaign Query ==> ",query)
+    return str("campaign genie")
+
+
 tools = [
     {
         "type": "function",
         "function": {
-            "name": "function_name",
-            "description": "description of function",
+            "name": "data_genie",
+            "description": "any data related query",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "param": {
+                    "query": {
                         "type": "string",
-                        "description": "query description here"
+                        "description": "user question on data"
                     }
                 },
-                "required": ["param"]
+                "required": ["query"]
             }
         }
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "insights_genie",
+            "description": "gives you insights on user question",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "user question"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "campaign_genie",
+            "description": "gives you trends, advertisement campaign and marketing strategy",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "user query"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
 ]
 
 
 def create_assistant():
     assistant = client.beta.assistants.create(
         name="Layer Assistant",
-        instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle '
-                     'it, and if there\'s no match, you use the default assistant.',
         model="gpt-3.5-turbo",
+        instructions="You are a personal AI Assistant",
         tools=tools)
 
     return assistant
@@ -366,6 +415,54 @@ def create_message_and_run(assistant, query, thread=None):
     )
     run = client.beta.threads.runs.create(
         thread_id=thread.id,
-        assistant_id=assistant.id
+        assistant_id=assistant.id,
+        instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle '
+                     'it, and if there\'s no match, you use the default assistant.',
     )
     return run, thread
+
+
+def retrieve_run(run, thread):
+    while True:
+        # Wait for 5 seconds
+        time.sleep(5)
+
+        # Retrieve the run status
+        run_status = client.beta.threads.runs.retrieve(
+            thread_id=thread.id,
+            run_id=run.id
+        )
+        print("run_status", run_status)
+        print("run_status.status", run_status.status)
+        if run_status.status == 'completed':
+            break
+        elif run_status.status == 'requires_action':
+            print("Function Calling")
+            required_actions = run_status.required_action.submit_tool_outputs.model_dump()
+            print("required_actions", required_actions)
+            tool_outputs = []
+            import json
+            for action in required_actions["tool_calls"]:
+                func_name = action['function']['name']
+                arguments = json.loads(action['function']['arguments'])
+                output = globals()[func_name](**arguments)  # Assuming functions are in the global scope
+                print("output", output)
+                tool_outputs.append({
+                    "tool_call_id": action['id'],
+                    "output": output
+                })
+
+            print("Submitting outputs back to the Assistant...")
+            client.beta.threads.runs.submit_tool_outputs(
+                thread_id=thread.id,
+                run_id=run.id,
+                tool_outputs=tool_outputs)
+
+
+def send_message_and_retrieve_response(query):
+    assistant = create_assistant()
+    run, thread = create_message_and_run(assistant, query)
+    retrieve_run(run, thread)
+    all_messages = client.beta.threads.messages.list(thread_id=thread.id)
+    print("all_messages", all_messages)
+    return all_messages.data[0].content[0].text.value
