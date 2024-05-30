@@ -4,6 +4,7 @@ import time
 import mimetypes
 import openai
 from openai import OpenAI
+from openai import AzureOpenAI
 import uuid
 from pinecone import Pinecone, ServerlessSpec
 from app import app
@@ -338,6 +339,11 @@ def campaign_genie(query):
     return str("campaign genie")
 
 
+client_azure = AzureOpenAI(
+    api_key=os.getenv("AZURE_API_KEY"),  # Your API key for the assistant api model
+    api_version=os.getenv("AZURE_API_KEY_VERSION"),  # API version  (i.e. 2024-02-15-preview)
+    azure_endpoint=os.getenv("AZURE_ENDPOINT"))
+
 tools = [
     {
         "type": "function",
@@ -394,9 +400,9 @@ tools = [
 
 
 def create_assistant():
-    assistant = client.beta.assistants.create(
+    assistant = client_azure.beta.assistants.create(
         name="Layer Assistant",
-        model="gpt-3.5-turbo",
+        model=os.getenv("AZURE_MODEL_NAME"),
         instructions="You are a personal AI Assistant",
         tools=tools)
 
@@ -406,17 +412,17 @@ def create_assistant():
 # a thread that runs message and openAI query
 def create_message_and_run(assistant, query, thread=None):
     if not thread:
-        thread = client.beta.threads.create()
+        thread = client_azure.beta.threads.create()
 
-    message = client.beta.threads.messages.create(
+    message = client_azure.beta.threads.messages.create(
         thread_id=thread.id,
         role="user",
         content=query
     )
-    run = client.beta.threads.runs.create(
+    run = client_azure.beta.threads.runs.create(
         thread_id=thread.id,
         assistant_id=assistant.id,
-        instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle '
+        instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle'
                      'it, and if there\'s no match, you use the default assistant.',
     )
     return run, thread
@@ -428,7 +434,7 @@ def retrieve_run(run, thread):
         time.sleep(5)
 
         # Retrieve the run status
-        run_status = client.beta.threads.runs.retrieve(
+        run_status = client_azure.beta.threads.runs.retrieve(
             thread_id=thread.id,
             run_id=run.id
         )
@@ -453,7 +459,7 @@ def retrieve_run(run, thread):
                 })
 
             print("Submitting outputs back to the Assistant...")
-            client.beta.threads.runs.submit_tool_outputs(
+            client_azure.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread.id,
                 run_id=run.id,
                 tool_outputs=tool_outputs)
@@ -463,6 +469,6 @@ def send_message_and_retrieve_response(query):
     assistant = create_assistant()
     run, thread = create_message_and_run(assistant, query)
     retrieve_run(run, thread)
-    all_messages = client.beta.threads.messages.list(thread_id=thread.id)
+    all_messages = client_azure.beta.threads.messages.list(thread_id=thread.id)
     print("all_messages", all_messages)
     return all_messages.data[0].content[0].text.value
