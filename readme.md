@@ -23,3 +23,15 @@
 ### Application will runs on
 
 `http://localhost:8080/`
+
+### Assistant Endpoint
+
+`http://localhost:8080/api/ai_assistant`
+
+### Body
+
+```
+{
+"text": "Data sources with information on UX consumers with pets"
+}
+```
