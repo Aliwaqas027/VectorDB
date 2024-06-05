@@ -5,7 +5,7 @@ import os
 from app import app
 from flask import jsonify, request
 from app.services.helper import (get_top8_similarities, upload_chunks_db, query_pinecone, upload_txt, upload_pdf,
-                                 upload_s3,
+                                 upload_s3, create_thread,
                                  send_message_and_retrieve_response, upload_csv, get_top8_filter_similarities, query_filter_pinecone,
                                  process_file_based_on_mime)
 from langchain_experimental.agents.agent_toolkits.csv.base import create_csv_agent
@@ -255,15 +255,36 @@ def chat_csv():
 def ai_assistant():
     try:
         data = request.get_json()
-        query = data.get('text')
+        query=data.get('text')
+        thread_id = data.get('thread_id')
+        assistant_id = data.get('assistant_id')
+        if not thread_id or not isinstance(thread_id, str):
+            return jsonify({'error': str('Thread id is required and must be a non-empty string')}), 400
         if not query or not isinstance(query, str):
             return jsonify({'error': str('text is required and must be a non-empty string')}), 400
+        if not assistant_id or not isinstance(query, str):
+            return jsonify({'error': str('text is required and must be a non-empty string')}), 400
+
         else:
-            message= send_message_and_retrieve_response(query)
+            message=send_message_and_retrieve_response(query, thread_id, assistant_id)
             response = {
                 'message': message
             }
             return jsonify(response), 200
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/create_assistant', methods=['POST'])
+def create_assistant():
+    try:
+        thread_id=create_thread()
+        response = {
+            'thread_id': thread_id
+        }
+        return jsonify(response), 200
 
     except Exception as e:
         print({'error': str(e)})

@@ -410,32 +410,30 @@ def create_assistant():
 
 
 # a thread that runs message and openAI query
-def create_message_and_run(assistant, query, thread=None):
-    if not thread:
-        thread = client_azure.beta.threads.create()
+def create_message_and_run(assistant_id, query, thread_id):
 
     message = client_azure.beta.threads.messages.create(
-        thread_id=thread.id,
+        thread_id=thread_id,
         role="user",
         content=query
     )
     run = client_azure.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id,
+        thread_id=thread_id,
+        assistant_id=assistant_id,
         instructions='You are a multi-layered assistant. You take the user\'s query, find the right function to handle'
                      'it, and if there\'s no match, you use the default assistant.',
     )
-    return run, thread
+    return run
 
 
-def retrieve_run(run, thread):
+def retrieve_run(run, thread_id):
     while True:
         # Wait for 5 seconds
         time.sleep(5)
 
         # Retrieve the run status
         run_status = client_azure.beta.threads.runs.retrieve(
-            thread_id=thread.id,
+            thread_id=thread_id,
             run_id=run.id
         )
         print("run_status", run_status)
@@ -460,15 +458,19 @@ def retrieve_run(run, thread):
 
             print("Submitting outputs back to the Assistant...")
             client_azure.beta.threads.runs.submit_tool_outputs(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 run_id=run.id,
                 tool_outputs=tool_outputs)
 
 
-def send_message_and_retrieve_response(query):
-    assistant = create_assistant()
-    run, thread = create_message_and_run(assistant, query)
-    retrieve_run(run, thread)
-    all_messages = client_azure.beta.threads.messages.list(thread_id=thread.id)
+def send_message_and_retrieve_response(query, thread_id, assistant_id):
+    run = create_message_and_run(assistant_id, query, thread_id)
+    retrieve_run(run, thread_id)
+    all_messages = client_azure.beta.threads.messages.list(thread_id=thread_id)
     print("all_messages", all_messages)
     return all_messages.data[0].content[0].text.value
+
+
+def create_thread():
+    thread = client_azure.beta.threads.create()
+    return thread.id
