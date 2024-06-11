@@ -1,5 +1,7 @@
 import json
 import io
+from prisma.models import Assistants
+from .database import db
 import requests
 import os
 from app import app
@@ -285,6 +287,56 @@ def create_assistant():
             'thread_id': thread_id
         }
         return jsonify(response), 200
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/create_assistant_db', methods=['POST'])
+def create_assistant_db():
+    try:
+        data = request.json
+        assistant = db.assistants.create(
+            data={
+                'name': data['name'],
+                'description': data.get('description'),
+                'parameters': data['parameters']
+            }
+        )
+        return jsonify(assistant.dict()), 201
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/<int:id>', methods=['PUT'])
+def update_assistant_db(id):
+    try:
+        data = request.json
+        assistant = db.assistants.update(
+            where={'id': id},
+            data={
+                'name': data['name'],
+                'description': data.get('description'),
+                'parameters': data['parameters']
+            }
+        )
+        return jsonify(assistant.dict()), 200
+
+    except Exception as e:
+        print({'error': str(e)})
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/<int:id>', methods=['DELETE'])
+def delete_assistant_db(id):
+    try:
+        db.assistants.delete(
+            where={'id': id}
+        )
+        return '', 204
 
     except Exception as e:
         print({'error': str(e)})
