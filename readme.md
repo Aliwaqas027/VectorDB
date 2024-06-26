@@ -26,7 +26,7 @@
 
 ### Assistant Endpoint
 
-`http://localhost:8080/api/ai_assistant`
+`http://localhost:8080/api/query`
 
 ### Body
 

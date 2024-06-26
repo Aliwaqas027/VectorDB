@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from openai import AzureOpenAI
@@ -159,6 +160,7 @@ def create_thread():
 
 
 def layer(query):
+    # Step 1: send the conversation and available functions to the model
     messages = [
         {"role": "system", "content": 'You are a multi-layered assistant. You take the user\'s query, find the right function to handle'
                                       'it, and if there\'s no match, you use the default assistant.'},
@@ -169,39 +171,45 @@ def layer(query):
         messages=messages,
         temperature=0,
         tools=tools,
-        tool_choice="auto"
+        tool_choice="auto"  # auto is default, but we'll be explicit
     )
     response_message = response.choices[0].message
     messages.append(response_message)
 
     print(response_message)
     tool_calls = response_message.tool_calls
+    # Step 2: check if the model wanted to call a function
     if tool_calls:
-        # If true the model will return the name of the tool / function to call and the argument(s)
-        tool_call_id = tool_calls[0].id
-        tool_function_name = tool_calls[0].function.name
-        tool_query_string = eval(tool_calls[0].function.arguments)['query']
-
-        # Step 3: Call the function and retrieve results. Append the results to the messages list.
-        if tool_function_name == 'data_genie':
-            results = data_genie(tool_query_string)
-
-            messages.append({
-                "role":"tool",
-                "tool_call_id":tool_call_id,
-                "name": tool_function_name,
-                "content":results
-            })
-
-            # Step 4: Invoke the chat completions API with the function response appended to the messages list
-            # Note that messages with role 'tool' must be a response to a preceding message with 'tool_calls'
-            model_response_with_function_call = client_azure.chat.completions.create(
-                model=os.getenv("AZURE_MODEL_NAME"),
-                messages=messages,
-            )  # get a new response from the model where it can see the function response
-            return model_response_with_function_call.choices[0].message.content
-        else:
-            print(f"Error: function {tool_function_name} does not exist")
+        # Step 3: call the function
+        # Note: the JSON response may not always be valid; be sure to handle errors
+        available_functions = {
+            "data_genie": data_genie,
+            "insights_genie": insights_genie,
+            "campaign_genie": campaign_genie,
+        }  # only one function in this example, but you can have multiple
+        messages.append(response_message)  # extend conversation with assistant's reply
+        # Step 4: send the info for each function call and function response to the model
+        for tool_call in tool_calls:
+            function_name = tool_call.function.name
+            function_to_call = available_functions[function_name]
+            function_args = json.loads(tool_call.function.arguments)
+            function_response = function_to_call(
+                query=function_args.get("query")
+            )
+            messages.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": function_response,
+                }
+            )  # extend conversation with function response
+        second_response = client_azure.chat.completions.create(
+            model=os.getenv("AZURE_MODEL_NAME"),
+            messages=messages,
+        )  # get a new response from the model where it can see the function response
+        second_response_message = second_response.choices[0].message
+        return second_response_message.content
     else:
         # Model did not identify a function to call, result can be returned to the user
-        print(response_message.content)
+        return response_message.content
